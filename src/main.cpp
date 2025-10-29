@@ -53,10 +53,10 @@ void setup() {
     });
 
     digitalWrite(LED_RED, LOW);
-    digitalWrite(LED_GREEN, HIGH);
+    digitalWrite(LED_GREEN, LOW);
 }
 
-int status;
+int status = 0;
 
 void loop() {
     noInterrupts();
@@ -77,58 +77,80 @@ void loop() {
 
                 auto front_obj_dist = scan[scan.size() / 2].dist(ScanPoint::zero());
 
-               
-
-
-                if(front_obj_dist != 0.0 && front_obj_dist > .60)
-                {
-                    tinyKart->set_steering(0);
-                    digitalWrite(LED_RED, LOW);
-                    tinyKart->set_forward(.20);
-                    status = 1;
-                }
+                //Find point and set appropriate throttle and steering
+                auto maybe_target_pt = gap_follow::find_gap_naive(scan,10,2);
+                auto target_pt = *maybe_target_pt;
                 
+                auto command = pure_pursuit::calculate_command_to_point(tinyKart, target_pt, 1.0);
 
-                // If object is 45cm in front of kart, stop (0.0 means bad point)
-                if (front_obj_dist != 0.0 && front_obj_dist < 0.45 + 0.1524 && status == 1) {
-                    logger.printf("Stopping because of object: %himm in front! \n", (int16_t) (front_obj_dist * 1000));
-                    tinyKart->set_reverse(.17);
-                    delay(100);
-                    tinyKart->set_neutral();
-                    status = 0;
-                    digitalWrite(LED_RED, HIGH);
-                }
+                    // Set throttle proportional to distance to point in front of kart
+                command.throttle_percent = mapfloat(front_obj_dist, 0.1, 10.0, 0.17, tinyKart->get_speed_cap());
 
-                if(front_obj_dist != 0.0 && front_obj_dist < 1.0 && status == 1)
+                if(target_pt.x > .05)
                 {
-                    status = 2;
-                    tinyKart->set_steering(6/(front_obj_dist*front_obj_dist));
-
+                    command.steering_angle = -1*command.steering_angle;
                 }
 
-                // // Find target point
-                // auto maybe_target_pt = gap_follow::find_gap_bubble(scan, 1.0);
-
-                // if (maybe_target_pt) {
-                //     auto target_pt = *maybe_target_pt;
-
-                //     logger.printf("Target point: (%hi, %hi)\n", (int16_t) (target_pt.x * 1000),
-                //                   (int16_t) (target_pt.y * 1000));
-
-                //     // Find command to drive to point
-                //     auto command = pure_pursuit::calculate_command_to_point(tinyKart, target_pt, 1.0);
-
-                //     // Set throttle proportional to distance to point in front of kart
-                //     command.throttle_percent = mapfloat(front_obj_dist, 0.1, 10.0, 0.15, tinyKart->get_speed_cap());
-
-                //     logger.printf("Command: throttle %hu, angle %hi\n", (uint16_t) (command.throttle_percent * 100),
-                //                   (int16_t) (command.steering_angle));
-
-                //     // Actuate kart
-                //     tinyKart->set_forward(command.throttle_percent);
-                //     tinyKart->set_steering(command.steering_angle);
-                // }
+                //Scan is OK, begin driving logic
+                switch (status)
+                {
+                case 0: //STANDBY
+                    if(front_obj_dist != 0.0 && front_obj_dist > .60)
+                    {
+                        status = 1;
+                    } 
+                    break;
+                case 1://NO OBSTACLE; DRIVING STRAIGHT    
+                    digitalWrite(LED_GREEN, HIGH);
+                    digitalWrite(LED_RED, LOW); 
+                    tinyKart->set_steering(0);
+                    tinyKart->set_forward(.20);   
+                    if(front_obj_dist != 0.0 && front_obj_dist < 0.45 + 0.1524) //STOP at dist .45
+                    {
+                        logger.printf("Stopping because of object: %himm in front! \n", (int16_t) (front_obj_dist * 1000));
+                        tinyKart->set_reverse(.17);
+                        delay(100);
+                        tinyKart->set_neutral();
+                        status = 0;
+                        digitalWrite(LED_RED, HIGH);
+                        digitalWrite(LED_GREEN, LOW);
+                    }
+                    if(front_obj_dist != 0.0 && front_obj_dist < 1.0 && status == 1) //STEER AWAY at dist < 1
+                    {
+                        status = 2;
+                        
+                        digitalWrite(LED_YELLOW, HIGH);
+                        digitalWrite(LED_GREEN, LOW);
+                    }
+                    break;
+                case 2: //OBSTACLE DETECTED; GAP FOUND; STEERING TOWARDS GAP
+                    {
+                    // Actuate kart
+                        tinyKart->set_forward(command.throttle_percent);
+                        tinyKart->set_steering(command.steering_angle);
+                    }
+                    if(front_obj_dist != 0.0 && front_obj_dist < 0.35 + 0.1524) //STOP at dist .35
+                    {
+                        logger.printf("Stopping because of object: %himm in front! \n", (int16_t) (front_obj_dist * 1000));
+                        tinyKart->set_reverse(.17);
+                        delay(100);
+                        tinyKart->set_neutral();
+                        status = 0;
+                        digitalWrite(LED_RED, HIGH);
+                        digitalWrite(LED_GREEN, LOW);
+                    }
+                    if (front_obj_dist != 0.0 && front_obj_dist > 1) //IF no obstacle in 1m, set back to status 1
+                    {
+                        status = 1;
+                        digitalWrite(LED_YELLOW, LOW);
+                    }  
+                    break;
+                default:
+                    break;
+                }
             }
+
+        //Something has gone wrong with the scan
         } else {
             switch (scan_res.error) {
                 case ScanResult::Error::CRCFail:
