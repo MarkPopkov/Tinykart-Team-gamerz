@@ -57,6 +57,7 @@ void setup() {
 }
 
 int status = 0;
+auto target_pt;
 
 void loop() {
     noInterrupts();
@@ -100,30 +101,33 @@ void loop() {
                         tinyKart->set_neutral();
                         status = 0;
                         digitalWrite(LED_RED, HIGH);
+                        digitalWrite(LED_GREEN, LOW)
                     }
                     if(front_obj_dist != 0.0 && front_obj_dist < 1.0 && status == 1) //STEER AWAY at dist < 1
                     {
-                        // status = 2; NOT YET IMPLEMENTED
-                        tinyKart->set_steering(6/(front_obj_dist*front_obj_dist));
+                        //find gap (scan to use, minimum gap size, minimum distance)
+                        target_pt = find_gap_naive(scan,10,2);
+                        status = 2;
+
+                        //Old PoC steering. TODO: remove once new steering works
+                        // tinyKart->set_steering(6/(front_obj_dist*front_obj_dist));
+                    }
+                    break;
+                case 2: //OBSTACLE DETECTED; GAP FOUND; STEERING TOWARDS GAP
+                    {
+                        //TODO: Actually put shit here.
+                        //Probably gonna just steal from the docs. No need to reinvent the wheel more than we already have
+                        //In simple terms, set throttle and steering according to gap.
+                        //ALSO need logic on when to find another gap and create another segment of steering.
+                        //prbably gonna be a huge pain in the ass, but nothing lots of trial and error cant accomplish
                     }
                     break;
                 default:
                     break;
                 }
-                
-                // If object is 45cm in front of kart, stop (0.0 means bad point)
-                // if (front_obj_dist != 0.0 && front_obj_dist < 0.45 + 0.1524 && status == 1) {
-                //     logger.printf("Stopping because of object: %himm in front! \n", (int16_t) (front_obj_dist * 1000));
-                //     tinyKart->set_reverse(.17);
-                //     delay(100);
-                //     tinyKart->set_neutral();
-                //     status = 0;
-                //     digitalWrite(LED_RED, HIGH);
-                //     digitalWrite(LED_)
-                // }
-
-                
             }
+
+        //Something has gone wrong with the scan
         } else {
             switch (scan_res.error) {
                 case ScanResult::Error::CRCFail:
